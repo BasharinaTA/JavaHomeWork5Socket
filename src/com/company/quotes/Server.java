@@ -8,8 +8,12 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Server {
+    public static final String OK = "200";
+    public static final String END = "500";
+    public static final int MAX_NUMBER = 5;
     final int port;
     final String host;
     static final String[] arrQuotes = {
@@ -34,63 +38,69 @@ public class Server {
             "Не столь важно, как медленно ты идешь, как то, как долго ты идешь, не останавливаясь.",
             "Единственный способ достичь невозможного — это поверить в то, что оно возможно."
     };
-    Map<String, String> users = new HashMap<>();
-    Map<Integer, Integer> requests = new HashMap<>();
+    Map<String, String> users = Map.of("admin1", "admin1", "admin2", "admin2", "admin3", "admin3", "admin4", "admin4");
+    Map<String, AtomicInteger> requests = new HashMap<>();
 
     public Server(int port, String host) {
         this.port = port;
         this.host = host;
     }
 
-    private void listUser() {
-        String user = "admin";
-        for (int i = 0; i < 5; i++) {
-            users.put(user + (i + 1), user + (i + 1));
+    public void run() {
+        for (String userName : users.keySet()) {
+            requests.put(userName, new AtomicInteger(MAX_NUMBER));
+        }
+        try (ServerSocket server = new ServerSocket(port, 10, InetAddress.getByName(host))) {
+            System.out.println("Сервер> инициализирован");
+            while (true) {
+                Socket client = server.accept();
+                Thread thread = new Thread(() -> connect(client));
+                thread.start();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
-    public void run() {
-        try (ServerSocket server = new ServerSocket(port, 10, InetAddress.getByName(host))) {
-            listUser();
-            System.out.println("Сервер> инициализирован");
-            try (Socket client = server.accept()) {
-
-                // Проверка логина
-                sendMessageToClient(client, "Введите имя пользователя");
-                String userName = receiveMessageFromClient(client);
-                if (!checkLogin(userName)) {
-                    sendMessageToClient(client, "Указан неверный логин. Клиент подключиться не может");
-                    return;
-                }
-
-                // Проверка пароля
-                sendMessageToClient(client, "Введите пароль пользователя");
-                String password = receiveMessageFromClient(client);
-                if (!checkPassword(userName, password)) {
-                    sendMessageToClient(client, "Указан неверный пароль. Клиент подключиться не может");
-                    return;
-                }
-
-                System.out.println("Сервер> клиент " + client.getPort() + " подключен " + new Date());
-                requests.put(client.getPort(), 5);
-                while (true) {
-                    String messageClient = receiveMessageFromClient(client).toLowerCase();
-                    if (messageClient.equals("bye")) {
-                        break;
-                    }
-                    if (requests.get(client.getPort()) <= 0) {
-                        sendMessageToClient(client, "Максимально количество цитат достигнуто");
-                        break;
-                    }
-                    String messageServer = arrQuotes[new Random().nextInt(0, 19)];
-                    sendMessageToClient(client, messageServer);
-                    System.out.println("Сервер> клиенту " + client.getPort() + " отправлено сообщение: " + messageServer);
-                    requests.put(client.getPort(), requests.get(client.getPort()) - 1);
-                }
-                System.out.println("Сервер> клиент " + client.getPort() + " отсоединился " + new Date());
+    private void connect(Socket client) {
+        try (client) {
+            // Авторизация пользователя
+            sendMessageToClient(client, "Введите имя пользователя");
+            String userName = receiveMessageFromClient(client);
+            boolean hasUser = false;
+            if (checkLogin(userName)) {
+                hasUser = true;
             }
-        } catch (
-                IOException e) {
+            sendMessageToClient(client, "Введите пароль пользователя");
+            String password = receiveMessageFromClient(client);
+            if (!hasUser || !checkPassword(userName, password)) {
+                sendMessageToClient(client, "Указан неверный логин/пароль. Клиент подключиться не может.");
+                return;
+            }
+            sendMessageToClient(client, OK);
+
+            System.out.println("Сервер> " + new Date() + " клиент " + userName + " подключился");
+
+
+            while (true) {
+                String messageClient = receiveMessageFromClient(client).toLowerCase();
+                if (messageClient.equals("bye")) {
+                    break;
+                }
+                if (requests.get(userName).get() <= 0) {
+                    sendMessageToClient(client, END);
+                    break;
+                }
+                if (requests.get(userName).getAndDecrement() <= 0) {
+                    sendMessageToClient(client, END);
+                    break;
+                }
+                String messageServer = arrQuotes[new Random().nextInt(0, 19)];
+                sendMessageToClient(client, messageServer);
+                System.out.println("Сервер> клиенту " + userName + " отправлено сообщение: " + messageServer);
+            }
+            System.out.println("Сервер> " + new Date() + " клиент " + userName + " отключился");
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }

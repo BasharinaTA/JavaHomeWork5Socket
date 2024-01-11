@@ -3,12 +3,13 @@ package com.company.quotes;
 import java.io.*;
 import java.net.Socket;
 import java.net.SocketException;
-import java.util.Scanner;
+
+import static com.company.quotes.Server.END;
+import static com.company.quotes.Server.OK;
 
 public class Client {
     final int port;
     final String host;
-    Scanner sc = new Scanner(System.in);
 
     public Client(int port, String host) {
         this.port = port;
@@ -19,21 +20,33 @@ public class Client {
         try (Socket client = new Socket(host, port)) {
             System.out.println("Клиент> инициализирован");
 
-            String login = receiveMessage(client);
-            System.out.println(login);
+            String textLogin = receiveMessage(client);
+            System.out.println(textLogin);
             sendMessage(client);
 
-            String password = receiveMessage(client);
-            System.out.println(password);
+            String textPassword = receiveMessage(client);
+            System.out.println(textPassword);
             sendMessage(client);
 
+            String answer = receiveMessage(client);
+            if (!OK.equals(answer)) {
+                System.out.println(answer);
+                return;
+            }
+
+            System.out.println("Вы вошли");
             while (true) {
                 sendMessage(client);
                 String message = receiveMessage(client);
                 if (message == null) {
-                    System.out.println("Соединение было прервано");
+                    System.out.println("Клиент отключен");
                     break;
                 }
+                if (END.equals(message)) {
+                    System.out.println("Лимит цитат достигнут");
+                    break;
+                }
+
                 System.out.println(message);
             }
         }
